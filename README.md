@@ -1,6 +1,8 @@
 # CANopenNode-VG015
 CanOpenNode port for K1921VG015
 
+Use [niiet_riscv_sdk](https://gitflic.ru/project/niiet/niiet_riscv_sdk) and [IDE](https://syntacore.com/tools/development-tools)
+
 It is based on [CANopenNode](https://github.com/CANopenNode/CANopenNode), which is free and open source CANopen Stack and is included as a git submodule.
 
 ![](./images/devboard.jpg)
