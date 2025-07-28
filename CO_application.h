@@ -3,6 +3,8 @@
 
 #include "CANopen.h"
 
+void Error_Handler(void);
+
 /**
  * Application interface, similar to Arduino, extended to CANopen and
  * additional, realtime thread.

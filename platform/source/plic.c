@@ -213,7 +213,11 @@ void trap_handler (void)
 				break;
 		}
 
-		while(1) {}; //TRAP
+		while(1)
+		{
+			asm("ebreak \n"
+				"nop    \n");
+		} //TRAP
 	} else {
 		// handle interrupt
 		PLIC_MachHandler();

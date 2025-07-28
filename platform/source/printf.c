@@ -9,7 +9,6 @@
 
 #include "retarget.h"
 
-
 /**
  * @brief  Transmit a char, if you want to use printf(),
  *         you need implement this function
@@ -25,10 +24,11 @@ void PrintChar(char c)
 /** Maximum string size allowed (in bytes). */
 #define MAX_STRING_SIZE         100
 
-
 /** Required for proper compilation. */
+/*
 struct _reent r = {0, (FILE *) 0, (FILE *) 1, (FILE *) 0};
 struct _reent *_impure_ptr = &r;
+*/
 
 /**
  * @brief  Writes a character inside the given string. Returns 1.

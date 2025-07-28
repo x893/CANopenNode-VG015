@@ -1,11 +1,6 @@
 #include "CO_application.h"
 #include "OD.h"
 
-void led_RUN_set(int on);
-void led_ERROR_set(int on);
-void led_USER1_set(int on);
-void led_USER2_set(int on);
-
 /******************************************************************************/
 CO_ReturnError_t app_programStart(uint16_t *bitRate, uint8_t *nodeId, uint32_t *errInfo)
 {
@@ -58,11 +53,11 @@ void app_programRt(CO_t *co, uint32_t timer1usDiff)
 void app_peripheralRead(CO_t *co, uint32_t timer1usDiff)
 {
 	static uint16_t count = 0;
-	OD_RAM.x6401_readAnalogInput16_bit[0] = count++;
+	OD_RAM.x6401_readAnalogueInput16Bit[0] = count++;
 
 	/* Read digital inputs */
 	static uint8_t digIn = 0;
-	OD_RAM.x6000_readDigitalInput8_bit[0] = digIn++;
+	OD_RAM.x6000_readInput8Bit[0] = digIn++;
 }
 
 /******************************************************************************/
@@ -72,7 +67,7 @@ void app_peripheralWrite(CO_t *co, uint32_t timer1usDiff)
 	led_ERROR_set(CO_LED_RED(co->LEDs, CO_LED_CANopen));
 
 	/* Write to digital outputs */
-	uint8_t digOut = OD_RAM.x6200_writeDigitalOutput8_bit[0];
+	uint8_t digOut = OD_RAM.x6200_writeOutput8Bit[0];
 
 	led_USER1_set(digOut & 0x01);
 	led_USER2_set(digOut & 0x02);

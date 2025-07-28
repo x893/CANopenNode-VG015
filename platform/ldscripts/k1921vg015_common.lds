@@ -8,124 +8,142 @@
 * - memory layout (MEMORY command)
 * - memory regions' aliases (REGION_ALIAS comand)
 * - stack size (STACK_SIZE symbol, i.e. "STACK_SIZE = 2048;")
-* - size of heap ("HEAP_FIXED_AFTER_BSS=<size>", default it is a space between end of .bss and start of .stack)
+* - heap size (HEAP_SIZE symbol, i.e. "HEAP_SIZE = 4096;")
 */
 
 STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : 2048;
+HEAP_SIZE  = DEFINED(HEAP_SIZE)  ? HEAP_SIZE  : 0;
 
 SECTIONS {
-  /* startup/crt code segment */
+	/* startup/crt code segment */
 	.text.startup ORIGIN(REGION_TEXT) (READONLY) : {
-    *(.startup.entry .startup.*)
-    . = ALIGN(16);
-    *(.init.rodata .init.rodata.*)
-    . = ALIGN(16);
-    *(.init.data .init.data.*)
-    . = ALIGN(16);
-    *(.init.text .init.text.*)
-  } >REGION_TEXT
+		*(.startup.entry .startup.*)
+		. = ALIGN(16);
+		*(.init.rodata .init.rodata.*)
+		. = ALIGN(16);
+		*(.init.data .init.data.*)
+		. = ALIGN(16);
+		*(.init.text .init.text.*)
+	} >REGION_TEXT
 
-  __TEXT_INIT_START__ = LOADADDR(.text.startup);
-  __TEXT_INIT_SIZE__ = SIZEOF(.text.startup);
+	__TEXT_INIT_START__ = LOADADDR(.text.startup);
+	__TEXT_INIT_SIZE__ = SIZEOF(.text.startup);
 
 	.text.crt (READONLY) : ALIGN(16) {
-    *(.text.crt*)
-  } >REGION_TEXT
+		*(.text.crt*)
+	} >REGION_TEXT
 
-  /* code segment */
+	/* code segment */
 	.text (READONLY) : ALIGN(4) {
-    PROVIDE(__TEXT_START__ = .);
-    *(.text .text.*)
-    PROVIDE(__TEXT_END__ = .);
-  } >REGION_TEXT
+		PROVIDE(__TEXT_START__ = .);
+		*(.text .text.*)
+		PROVIDE(__TEXT_END__ = .);
+	} >REGION_TEXT
 
-  /* thread-local data segment */
+	.OD_RUNTIME_REGION (READONLY) : ALIGN(4) {
+		KEEP (*(.OD_RUNTIME_START))
+	} >OD_RUNTIME
+	
+	.OD_FACTORY_REGION (READONLY) : ALIGN(4) {
+		KEEP (*(.OD_FACTORY_START))
+	} >OD_FACTORY
+	
+	/* thread-local data segment */
 	.tdata (READONLY) : ALIGN(4) {
-    PROVIDE(_tls_data = .);
-    PROVIDE(_tdata_start = .);
-    *(.tdata .tdata.*)
-    PROVIDE(_tdata_end = .);
-  } >REGION_RODATA
+		PROVIDE(_tls_data = .);
+		PROVIDE(_tdata_start = .);
+		*(.tdata .tdata.*)
+		PROVIDE(_tdata_end = .);
+	} >REGION_RODATA
 
 	.tbss (READONLY) : ALIGN(4) {
-    PROVIDE(_tbss_start = .);
-    *(.tbss .tbss.*)
-    . = ALIGN(4);
-    PROVIDE(_tbss_end = .);
-  } >REGION_RODATA
+		PROVIDE(_tbss_start = .);
+		*(.tbss .tbss.*)
+		. = ALIGN(4);
+		PROVIDE(_tbss_end = .);
+	} >REGION_RODATA
 
-  __TLS_SIZE__ = (_tbss_end - _tdata_start + 0xf) & ~0xf;
+	__TLS_SIZE__ = (_tbss_end - _tdata_start + 0xF) & ~0xF;
 
-  /* read-only data segment */
+	/* read-only data segment */
 	.rodata (READONLY) : ALIGN(4) {
-    *(.rodata) *(.rodata.*) *(.gnu.linkonce.r.*)
-  } >REGION_RODATA
+		*(.rodata) *(.rodata.*) *(.gnu.linkonce.r.*)
+	} >REGION_RODATA
 
-  /* small read-only data segment */
+	/* small read-only data segment */
 	.srodata (READONLY) : {
-    *(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata*)
-  } >REGION_RODATA
+		*(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata*)
+	} >REGION_RODATA
 
-  /* small data segment */
-  .sdata : ALIGN(4) {
-    __SDATA_BEGIN__ = .;
-    *(.sdata .sdata.* .sdata2.* .gnu.linkonce.s.*)
-  } >REGION_DATA AT>REGION_TEXT
+	/* small data segment */
+	.sdata : ALIGN(4) {
+		__SDATA_BEGIN__ = .;
+		*(.sdata .sdata.* .sdata2.* .gnu.linkonce.s.*)
+	} >REGION_DATA AT>REGION_TEXT
 
-  /* data segment */
-  .data : ALIGN(4) {
-    __DATA_BEGIN__ = .;
-    *(.data .data.* .gnu.linkonce.d.*)
-    _edata = .; PROVIDE (edata = .);
-  } >REGION_DATA AT>REGION_TEXT
-  
-  PROVIDE( __data_source_start = LOADADDR(.data) );
-  PROVIDE( __data_target_start = ADDR(.data) );
-  PROVIDE( __data_target_end = ADDR(.data) + SIZEOF(.data) );
-  
-  PROVIDE( __sdata_source_start = LOADADDR(.sdata) );
-  PROVIDE( __sdata_target_start = ADDR(.sdata) );
-  PROVIDE( __sdata_target_end = ADDR(.sdata) + SIZEOF(.sdata) );
+	/* data segment */
+	.data : ALIGN(4) {
+		__DATA_BEGIN__ = .;
+		*(.data .data.* .gnu.linkonce.d.*)
+		_edata = .; PROVIDE (edata = .);
+	} >REGION_DATA AT>REGION_TEXT
 
-  /* bss segment */
-  .sbss : {
-    PROVIDE(__bss_start = .);
-    *(.sbss .sbss.* .gnu.linkonce.sb.*)
-    *(.scommon)
-  } >REGION_BSS
+	PROVIDE( __data_source_start = LOADADDR(.data) );
+	PROVIDE( __data_target_start = ADDR(.data) );
+	PROVIDE( __data_target_end   = ADDR(.data) + SIZEOF(.data) );
 
-  .bss : ALIGN(4) {
-    *(.bss .bss.* .gnu.linkonce.b.*)
-    *(COMMON)
-    . = ALIGN(4);
-    __BSS_END__ = .;
-    PROVIDE(__bss_end = .);
-    PROVIDE(_end = .);
-    PROVIDE(__end = .);
-  } >REGION_BSS
+	PROVIDE( __sdata_source_start = LOADADDR(.sdata) );
+	PROVIDE( __sdata_target_start = ADDR(.sdata) );
+	PROVIDE( __sdata_target_end   = ADDR(.sdata) + SIZEOF(.sdata) );
 
-  /* End of uninitalized data segement */
+	/* bss segment */
+	.sbss : {
+		PROVIDE(__bss_start = .);
+		*(.sbss .sbss.* .gnu.linkonce.sb.*)
+		*(.scommon)
+	} >REGION_BSS
 
-  __global_pointer$ = MIN(__DATA_BEGIN__ + 0x780,
-                          MAX(__SDATA_BEGIN__ + 0x780, __BSS_END__ - 0x780));
+	.bss : ALIGN(4) {
+		*(.bss .bss.* .gnu.linkonce.b.*)
+		*(COMMON)
+		. = ALIGN(4);
+		__BSS_END__ = .;
+		PROVIDE(__bss_end = .);
+		PROVIDE(_end = .);
+		PROVIDE(__end = .);
+	} >REGION_BSS
 
-  /* Stack segement */
-  .stack ORIGIN(REGION_STACK) + LENGTH(REGION_STACK) - STACK_SIZE - __TLS_SIZE__ : {
-    PROVIDE(__STACK_START__ = .);
-    . += STACK_SIZE;
-    PROVIDE(__C_STACK_TOP__ = .);
-    PROVIDE(__STACK_END__ = .);
-    PROVIDE(__TLS0_BASE__ = .);
-  } >REGION_STACK
+	/* End of uninitalized data segement */
 
-  _heap_start = ALIGN(__bss_end, 16);
-  _heap_end   = DEFINED(HEAP_FIXED_AFTER_BSS) ? MIN(ALIGN(__STACK_START__, 16), (_heap_start + HEAP_FIXED_AFTER_BSS)) : ALIGN(__STACK_START__, 16);
+	__global_pointer$ =
+		MIN(
+			__DATA_BEGIN__ + 0x780,
+			MAX(__SDATA_BEGIN__ + 0x780, __BSS_END__ - 0x780)
+		);
 
-  /* discard relocation code */
-  /* plf_init_relocate = plf_init_noreloc;*/
+	/* Stack and Heap segement */
+	.stack ORIGIN(REGION_STACK) + LENGTH(REGION_STACK) - HEAP_SIZE - STACK_SIZE - __TLS_SIZE__ : ALIGN(4) {
 
-  /DISCARD/ : {
-    *(.init.text.plf_init_relocate)
-    *(.eh_frame .eh_frame.*)
-  }
+		PROVIDE( _heap_start = . );
+		. = . + HEAP_SIZE;
+		PROVIDE( _heap_end = . );
+
+		PROVIDE(__STACK_START__ = .);
+		. += STACK_SIZE;
+		PROVIDE(__C_STACK_TOP__ = .);
+		PROVIDE(__STACK_END__ = .);
+
+		PROVIDE(__TLS0_BASE__ = .);
+	} >REGION_STACK
+
+	/* discard relocation code */
+	/* plf_init_relocate = plf_init_noreloc;*/
+
+	/DISCARD/ : {
+		*(.init.text.plf_init_relocate)
+		*(.eh_frame .eh_frame.*)
+		libc.a ( * )
+		libm.a ( * )
+		libgcc.a ( * )
+	}
 }

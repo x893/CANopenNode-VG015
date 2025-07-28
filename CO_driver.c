@@ -20,6 +20,8 @@ unsigned int __builtin_disable_interrupts(void)
 	return state;
 }
 
+int od_log_level = OD_LL_INFO;
+
 void __builtin_enable_interrupts(void)
 {
 	//allow all interrupts in machine mode
@@ -31,7 +33,6 @@ void __builtin_enable_interrupts(void)
 	// enable global interrupts
 	set_csr(mstatus, MSTATUS_MIE);
 }
-void __enable_irq(void) __attribute((alias("__builtin_enable_interrupts")));
 
 #include "retarget.h"
 
@@ -42,52 +43,50 @@ void retarget_init(void)
 {
 #if defined RETARGET
 	uint32_t baud_icoef = SystemCoreClock_uart / (16 * RETARGET_UART_BAUD);
-	uint32_t baud_fcoef = ((SystemCoreClock_uart / (16.0f * RETARGET_UART_BAUD)
-			- baud_icoef) * 64 + 0.5f);
-	uint32_t uartclk_ref = 1;	//RCU_UARTCFG_UARTCFG_CLKSEL_OSICLK;
+	uint32_t baud_fcoef = ((SystemCoreClock_uart / (16.0f * RETARGET_UART_BAUD) - baud_icoef) * 64 + 0.5f);
 
-	RCU->CGCFGAHB_bit.GPIOAEN = 1;
+	RCU->CGCFGAHB_bit.GPIOAEN  = 1;
 	RCU->RSTDISAHB_bit.GPIOAEN = 1;
-	RCU->CGCFGAPB_bit.UART0EN = 1;
+
+	RCU->CGCFGAPB_bit.UART0EN  = 1;
+	RCU->RSTDISAPB_bit.UART0EN = 0;
+	__NOP();
 	RCU->RSTDISAPB_bit.UART0EN = 1;
 
-	RETARGET_UART_PORT->ALTFUNCNUM_bit.PIN0 = 1;
-	RETARGET_UART_PORT->ALTFUNCNUM_bit.PIN1 = 1;
-	RETARGET_UART_PORT->ALTFUNCSET = (1 << RETARGET_UART_PIN_TX_POS)
-			| (1 << RETARGET_UART_PIN_RX_POS);
-	RCU->UARTCLKCFG[RETARGET_UART_NUM].UARTCLKCFG = (uartclk_ref
-			<< RCU_UARTCLKCFG_CLKSEL_Pos) |
-	RCU_UARTCLKCFG_CLKEN_Msk |
-	RCU_UARTCLKCFG_RSTDIS_Msk;
+	RETARGET_UART_PORT->ALTFUNCNUM_bit.PIN0 = GPIO_ALTFUNCNUM_PIN0_AF1;
+	RETARGET_UART_PORT->ALTFUNCNUM_bit.PIN1 = GPIO_ALTFUNCNUM_PIN1_AF1;
+	RETARGET_UART_PORT->ALTFUNCSET =
+			(1 << RETARGET_UART_PIN_TX_POS) |
+			(1 << RETARGET_UART_PIN_RX_POS);
+	RCU->UARTCLKCFG[RETARGET_UART_NUM].UARTCLKCFG =
+			(RCU_UARTCLKCFG_CLKSEL_HSE << RCU_UARTCLKCFG_CLKSEL_Pos) |
+			RCU_UARTCLKCFG_CLKEN_Msk |
+			RCU_UARTCLKCFG_RSTDIS_Msk;
 	RETARGET_UART->IBRD = baud_icoef;
 	RETARGET_UART->FBRD = baud_fcoef;
-	RETARGET_UART->LCRH = UART_LCRH_FEN_Msk | (3 << UART_LCRH_WLEN_Pos);
+	RETARGET_UART->LCRH = UART_LCRH_FEN_Msk | (UART_LCRH_WLEN_8bit << UART_LCRH_WLEN_Pos);
 	RETARGET_UART->CR = UART_CR_TXE_Msk | UART_CR_RXE_Msk | UART_CR_UARTEN_Msk;
 #endif //RETARGET
 }
 
-void timerIsr(void);
-volatile uint32_t timerIsrFlag = 0;
-uint32_t timerIsrActive = 0;
+#ifdef CO_RT_THREAD_ISR_DEFAULT
+volatile uint32_t CO_RT_THREAD_ISR_FLAG = 0;
+#endif
 
 volatile uint32_t CO_timer_ms;
+volatile uint64_t MG_Ticks;
 
 void TMR32_IRQHandler()
 {
 	TMR32->IC_bit.CAP0 = 1;
 	CO_timer_ms++;
-	timerIsrFlag = 1;
-	if (timerIsrActive == 0)
-	{
-		timerIsrActive = 1;
-		timerIsr();
-	}
+	MG_Ticks++;
 }
 
 void timer_enable(int ENABLE)
 {
 	TMR32->COUNT = 0;
-	TMR32->IM_bit.CAP0 = (ENABLE) ? 1 : 0;
+	TMR32->IM_bit.CAP0 = (ENABLE != 0) ? 1 : 0;
 }
 
 void timer_init(uint32_t period)
@@ -105,56 +104,63 @@ void timer_init(uint32_t period)
 	PLIC_IntEnable(Plic_Mach_Target, IsrVect_IRQ_TMR32);
 }
 
-#define LEDS_MSK  0xF000
-#define LED4_MSK  (1 << 12)
-#define LED5_MSK  (1 << 13)
-#define LED6_MSK  (1 << 14)
-#define LED7_MSK  (1 << 15)
+void led_set(uint16_t leds)
+{
+	GPIOA->DATAOUTSET = leds;
+}
+
+void led_toggle(uint16_t leds)
+{
+	GPIOA->DATAOUTTGL = leds;
+}
+
+void led_reset(uint16_t leds)
+{
+	GPIOA->DATAOUTCLR = leds;
+}
 
 void led_RUN_set(int on)
 {
 	if (on)
-		GPIOA->DATAOUTSET = LED4_MSK;
+		GPIOA->DATAOUTSET = LED_RUN;
 	else
-		GPIOA->DATAOUTCLR = LED4_MSK;
+		GPIOA->DATAOUTCLR = LED_RUN;
 }
 
 void led_ERROR_set(int on)
 {
 	if (on)
-		GPIOA->DATAOUTSET = LED5_MSK;
+		GPIOA->DATAOUTSET = LED_ERROR;
 	else
-		GPIOA->DATAOUTCLR = LED5_MSK;
+		GPIOA->DATAOUTCLR = LED_ERROR;
 }
 
 void led_USER1_set(int on)
 {
 	if (on)
-		GPIOA->DATAOUTSET = LED6_MSK;
+		GPIOA->DATAOUTSET = LED_USER1;
 	else
-		GPIOA->DATAOUTCLR = LED6_MSK;
+		GPIOA->DATAOUTCLR = LED_USER1;
 }
 
 void led_USER2_set(int on)
 {
 	if (on)
-		GPIOA->DATAOUTSET = LED7_MSK;
+		GPIOA->DATAOUTSET = LED_USER2;
 	else
-		GPIOA->DATAOUTCLR = LED7_MSK;
+		GPIOA->DATAOUTCLR = LED_USER2;
 }
 
 void CO_PERIPHERAL_CONFIG(void)
 {
 	RCU->CGCFGAHB_bit.GPIOAEN = 1;
 	RCU->RSTDISAHB_bit.GPIOAEN = 1;
-	GPIOA->OUTENSET = LEDS_MSK;
-	GPIOA->DATAOUTCLR = LEDS_MSK;
+	GPIOA->OUTENSET   = LEDS;
+	GPIOA->DATAOUTCLR = LEDS;
 
 	SystemInit();
 	SystemCoreClockUpdate();
 	retarget_init();
-
-	__enable_irq();
 }
 
 int retarget_put_char(int ch)
@@ -163,8 +169,7 @@ int retarget_put_char(int ch)
 	if (ch == '\n')
 		retarget_put_char('\r');
 	while (RETARGET_UART->FR_bit.BUSY)
-	{
-	}
+		__NOP();
 	RETARGET_UART->DR = ch;
 #else
 	(void) ch;
@@ -172,9 +177,14 @@ int retarget_put_char(int ch)
 	return 0;
 }
 
-int putchar(int)
+int __io_putchar(int ch)
 {
-	return 0;
+	return retarget_put_char(ch);
+}
+
+int putchar(int ch)
+{
+	return retarget_put_char(ch);
 }
 
 int _write(int fd, char *str, int len)
@@ -204,9 +214,10 @@ typedef struct
 	uint16_t bitrate; /* bitrate in kbps */
 } CO_CANbitRateData_t;
 
-static const CO_CANbitRateData_t CO_CANbitRateData[] =
-{
-{ 19, 1, 4, 3, 250 }, };
+static const CO_CANbitRateData_t CO_CANbitRateData[] = {
+		{ 19, 1, 4, 3, 250 },
+};
+
 /******************************************************************************/
 bool_t CO_LSSchkBitrateCallback(void *object, uint16_t bitRate)
 {
@@ -240,10 +251,10 @@ void CAN_Object_Location(uint32_t obj_first_num, uint32_t obj_last_num,
 #define CAN0_LOCATION_FIRST	0
 
 #define CAN0_TX_FIRST		CAN0_LOCATION_FIRST
-#define CAN0_TX_LAST		(CAN0_TX_FIRST + 3)
+#define CAN0_TX_LAST		(CAN0_TX_FIRST + 7)
 
 #define CAN0_RX_FIRST		(CAN0_TX_LAST  + 1)
-#define CAN0_RX_LAST		(CAN0_RX_FIRST + 3)
+#define CAN0_RX_LAST		(CAN0_RX_FIRST + 7)
 
 #define CAN0_LOCATION_LAST	CAN0_RX_LAST
 
@@ -289,9 +300,9 @@ void can_init(const CO_CANbitRateData_t *CANbitRateData)
 	RCU->CGCFGAHB_bit.GPIOBEN = 1;
 	RCU->RSTDISAHB_bit.GPIOBEN = 1;
 
-	GPIOB->ALTFUNCNUM_bit.PIN8 = 1;
-	GPIOB->ALTFUNCNUM_bit.PIN9 = 1;
-	GPIOB->ALTFUNCSET = 0x0300;
+	GPIOB->ALTFUNCNUM_bit.PIN8 = GPIO_ALTFUNCNUM_PIN8_AF1;
+	GPIOB->ALTFUNCNUM_bit.PIN9 = GPIO_ALTFUNCNUM_PIN9_AF1;
+	GPIOB->ALTFUNCSET = (GPIO_ALTFUNCSET_PIN8_Msk | GPIO_ALTFUNCSET_PIN9_Msk);
 
 	node->NCR =
 	CAN_Node_NCR_CCE_Msk |
@@ -572,6 +583,8 @@ CO_ReturnError_t CO_CANmodule_init(CO_CANmodule_t *CANmodule, void *CANptr,
 	return CO_ERROR_NO;
 }
 
+#define CAN_NODE_ERROR	(CAN_Node_NSR_EWRN_Msk | CAN_Node_NSR_BOFF_Msk | CAN_Node_NSR_LLE_Msk | CAN_Node_NSR_LOE_Msk)
+
 /******************************************************************************/
 void CO_CANmodule_process(CO_CANmodule_t *CANmodule)
 {
@@ -580,11 +593,7 @@ void CO_CANmodule_process(CO_CANmodule_t *CANmodule)
 
 	rxErrors = CAN->Node[0].NECNT_bit.REC;
 	txErrors = CAN->Node[0].NECNT_bit.TEC;
-	if ((CAN->Node[0].NSR & (
-	CAN_Node_NSR_EWRN_Msk |
-	CAN_Node_NSR_BOFF_Msk |
-	CAN_Node_NSR_LLE_Msk |
-	CAN_Node_NSR_LOE_Msk)) != 0)
+	if ((CAN->Node[0].NSR & CAN_NODE_ERROR) != 0)
 		txErrors = 256; // bus off
 	// overflow = (CAN_REG(CANmodule->CANptr, C_FIFOINT) & 0x8) ? 1 : 0;
 	err = ((uint32_t) txErrors << 16) | ((uint32_t) rxErrors << 8) | overflow;
@@ -690,46 +699,37 @@ void CO_CANinterrupt(CO_CANmodule_t *CANmodule)
 	CO_CANrxMsg_t rcvMsg; /* pointer to received message in CAN module */
 	uint16_t index; /* index of received message */
 	uint16_t rcvMsgIdent; /* identifier of the received message */
-	CO_CANrx_t *buffer = NULL; /* receive message buffer from CO_CANmodule_t object. */
-	bool_t msgMatched = false;
+	CO_CANrx_t *buffer; /* receive message buffer from CO_CANmodule_t object. */
 
-	_CANMSG_Msg_TypeDef *m = &CANMSG->Msg[CAN0_RX_FIRST];
-	for (uint32_t x = CAN0_RX_FIRST; x <= CAN0_RX_LAST; x++, m++)
+	_CANMSG_Msg_TypeDef *msg = &CANMSG->Msg[CAN0_RX_FIRST];
+	for (uint32_t x = CAN0_RX_FIRST; x <= CAN0_RX_LAST; x++, msg++)
 	{
-		if (m->MOSTAT_bit.MSGVAL != 0)
+		if (msg->MOSTAT_bit.MSGVAL != 0)
 			continue;
 
-		rcvMsgIdent = (m->MOAR >> MOAR_STD_Pos) & 0x7FF;
-		if (CANmodule->useCANrxFilters)
+		rcvMsgIdent = (msg->MOAR >> MOAR_STD_Pos) & 0x7FF;
+
+		/* CAN module filters are not used, message with any standard 11-bit identifier */
+		/* has been received. Search rxArray form CANmodule for the same CAN-ID. */
+		buffer = &CANmodule->rxArray[0];
+		for (index = CANmodule->rxSize; index > 0U; index--)
 		{
-			__BKPT();
-		}
-		else
-		{
-			/* CAN module filters are not used, message with any standard 11-bit identifier */
-			/* has been received. Search rxArray form CANmodule for the same CAN-ID. */
-			buffer = &CANmodule->rxArray[0];
-			for (index = CANmodule->rxSize; index > 0U; index--)
+			if (((rcvMsgIdent ^ buffer->ident) & buffer->mask) == 0U)
 			{
-				if (((rcvMsgIdent ^ buffer->ident) & buffer->mask) == 0U)
+				/* Call specific function, which will process the message */
+				if (buffer->CANrx_callback != NULL)
 				{
-					msgMatched = true;
-					break;
+					rcvMsg.ident = rcvMsgIdent;
+					rcvMsg.dlc = msg->MOFCR_bit.DLC;
+					memcpy(&rcvMsg.data[0], (void *)&msg->MODATAL, 4);
+					memcpy(&rcvMsg.data[4], (void *)&msg->MODATAH, 4);
+					buffer->CANrx_callback(buffer->object, (void *)&rcvMsg);
 				}
-				buffer++;
+				break;
 			}
+			buffer++;
 		}
 
-		/* Call specific function, which will process the message */
-		if (msgMatched && (buffer != NULL) && (buffer->CANrx_callback != NULL))
-		{
-			rcvMsg.ident = rcvMsgIdent;
-			rcvMsg.dlc = m->MOFCR_bit.DLC;
-			memcpy(&rcvMsg.data[0], (void *)&m->MODATAL, 4);
-			memcpy(&rcvMsg.data[4], (void *)&m->MODATAH, 4);
-			buffer->CANrx_callback(buffer->object, (void *)&rcvMsg);
-		}
-
-		m->MOCTR = CANMSG_Msg_MOCTR_SETMSGVAL_Msk;
+		msg->MOCTR = CANMSG_Msg_MOCTR_SETMSGVAL_Msk;
 	}
 }

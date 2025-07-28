@@ -8,11 +8,97 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+#ifndef CO_RT_THREAD_ISR
+#define CO_RT_THREAD_ISR_DEFAULT
+#define CO_RT_THREAD_ISR timerIsr
+void CO_RT_THREAD_ISR(void);
+#endif
+
+#ifndef CO_RT_THREAD_ISR_FLAG
+#define CO_RT_THREAD_ISR_FLAG timerIsrFlag
+extern volatile uint32_t CO_RT_THREAD_ISR_FLAG;
+#endif
+
+#ifndef CO_CANRX_ISR
+#define CO_CANRX_ISR_DEFAULT
+#define CO_CANRX_ISR() void CAN0_IRQHandler(void)
+#endif
+
+extern volatile uint32_t CO_timer_ms;
+
+enum { OD_LL_NONE, OD_LL_ERROR, OD_LL_INFO, OD_LL_DEBUG, OD_LL_VERBOSE };
+extern int od_log_level;  // Current log level, one of OD_LL_*
+void od_log_prefix(int ll, const char *file, int line, const char *fname);
+#define od_log			printf
+#define od_log_prefix	printf
+
+#define OD_LOG(level, args)												\
+		do {															\
+			if ((level) <= od_log_level) {								\
+				od_log_prefix("Level:%d %s:%d %s ", level, __FILE__, __LINE__, __func__);	\
+				od_log args;											\
+			}															\
+		} while (0)
+
+#define OD_ERROR(args)		OD_LOG(OD_LL_ERROR, args)
+#define OD_INFO(args)		OD_LOG(OD_LL_INFO, args)
+#define OD_DEBUG(args)		OD_LOG(OD_LL_DEBUG, args)
+#define OD_VERBOSE(args)	OD_LOG(OD_LL_VERBOSE, args)
+
+#define CO_USE_GLOBALS
+
+#define CO_CONFIG_LEDS CO_CONFIG_LEDS_ENABLE
+#define CO_CONFIG_GLOBAL_FLAG_TIMERNEXT (CO_CONFIG_FLAG_TIMERNEXT)
+#define CO_CONFIG_GLOBAL_FLAG_OD_DYNAMIC CO_CONFIG_FLAG_OD_DYNAMIC
+
+#define CO_CONFIG_TIME (CO_CONFIG_TIME_ENABLE | \
+                        CO_CONFIG_GLOBAL_FLAG_CALLBACK_PRE | \
+                        CO_CONFIG_GLOBAL_FLAG_OD_DYNAMIC | \
+						CO_CONFIG_FLAG_CALLBACK_PRE | \
+						0)
+
+#define CO_CONFIG_SDO_SRV	( \
+							CO_CONFIG_SDO_SRV_SEGMENTED | \
+							CO_CONFIG_SDO_SRV_BLOCK | \
+							CO_CONFIG_GLOBAL_FLAG_CALLBACK_PRE | \
+							CO_CONFIG_GLOBAL_FLAG_TIMERNEXT | \
+							CO_CONFIG_GLOBAL_FLAG_OD_DYNAMIC \
+							)
+
+#define CO_CONFIG_SDO_SRV_BUFFER_SIZE 1032 /* 1029 recieved block */
+
+#define CO_CONFIG_PDO ( CO_CONFIG_RPDO_ENABLE | \
+						CO_CONFIG_TPDO_ENABLE | \
+						CO_CONFIG_PDO_SYNC_ENABLE | \
+						CO_CONFIG_GLOBAL_RT_FLAG_CALLBACK_PRE | \
+						CO_CONFIG_PDO_OD_IO_ACCESS | \
+						CO_CONFIG_GLOBAL_FLAG_OD_DYNAMIC | \
+						CO_CONFIG_RPDO_TIMERS_ENABLE | \
+						CO_CONFIG_TPDO_TIMERS_ENABLE | \
+						CO_CONFIG_GLOBAL_FLAG_TIMERNEXT | \
+						0 )
+
+#define LED_RUN		(1 << 12)
+#define LED_ERROR	(1 << 13)
+#define LED_USER1	(1 << 14)
+#define LED_USER2	(1 << 15)
+#define LEDS  		(LED_RUN | LED_ERROR | LED_USER1 | LED_USER2)
+
+void led_set(uint16_t leds);
+void led_toggle(uint16_t leds);
+void led_reset(uint16_t leds);
+
+void led_RUN_set(int on);
+void led_ERROR_set(int on);
+void led_USER1_set(int on);
+void led_USER2_set(int on);
 
 #ifndef CO_CANRX_ENABLE
 void can_enable(int ENABLE);
@@ -22,7 +108,7 @@ void can_enable(int ENABLE);
 static inline void __BKPT(void)
 {
 	asm("ebreak \n"
-			"nop    \n");
+		"nop    \n");
 }
 
 static inline void __NOP(void)
@@ -31,7 +117,7 @@ static inline void __NOP(void)
 }
 
 #ifndef CO_clearWDT
-#define CO_clearWDT() __NOP()
+#define CO_clearWDT()
 #endif
 
 /* Interval of the realtime thread */
@@ -56,11 +142,13 @@ void timer_enable(int ENABLE);
 
 unsigned int __builtin_disable_interrupts(void);
 void __builtin_enable_interrupts(void);
+#define __enable_irq()	__builtin_enable_interrupts()
+#define __disable_irq()	__builtin_disable_interrupts()
 
 #ifdef CO_CONFIG_STORAGE
 #undef  CO_CONFIG_STORAGE
 #endif
-#define CO_CONFIG_STORAGE	(0)
+#define CO_CONFIG_STORAGE		CO_CONFIG_STORAGE_ENABLE
 #define CO_STORAGE_APPLICATION
 
 void CO_PERIPHERAL_CONFIG(void);
@@ -205,7 +293,7 @@ typedef struct
 #define CO_UNLOCK_EMCY(CAN_MODULE) { \
     if ((CAN_MODULE)->interruptDisabler == 2) { \
         if(((CAN_MODULE)->interruptStatus & MSTATUS_MIE) != 0) { \
-            __builtin_enable_interrupts(); \
+        	__builtin_enable_interrupts(); \
         } \
         (CAN_MODULE)->interruptDisabler = 0; \
     } \

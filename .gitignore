@@ -1,2 +1,4 @@
 /Debug/
-.settings/
+/Release/
+version.h
+.vs/
